@@ -49,6 +49,8 @@ namespace ImagePuzzle
         FileItem? file;
         FileItem? Remofile;
         ExeItem? RemoItem;
+        Point? _exeDragStart;
+        Point? _fileDragStart;
 
         public string? FolderPath;
 
@@ -120,24 +122,18 @@ namespace ImagePuzzle
         private void ExeList_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             ExeDrag = ExeList;
-            ExeItem? selected = (ExeItem)ExeList.SelectedItem;
-            if (selected == null) return;
-            placeholder = _itemService.CreatePlaceholder();
-            int idx = ExeItems.IndexOf(selected);
-            ExeItems.Insert(idx, placeholder);
-            ExeItems.Remove(selected);
-            DragItem = selected;
+            DragItem = ExeList.SelectedItem as ExeItem;
+            if (DragItem != null) _exeDragStart = e.GetPosition(ExeList);
         }
-        private void ExeList_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => CleanDragDropData();
+        private void ExeList_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            _exeDragStart = null;
+            CleanDragDropData();
+        }
         private void ExeList_DragEnter(object sender, DragEventArgs e)
         {
             if (!e.Data.GetDataPresent(typeof(ExeItem)) && !e.Data.GetDataPresent(typeof(MethodItem))) return;
-            if (placeholder == null && e.Data.GetDataPresent(typeof(ExeItem)))
-            {
-                placeholder = _itemService.CreatePlaceholder();
-                ExeItems.Add(placeholder);
-            }
-            else if (placeholder == null && e.Data.GetDataPresent(typeof(MethodItem)) && DragItem != null)
+            if (placeholder == null && DragItem != null)
             {
                 placeholder = _itemService.CreatePlaceholder();
                 ExeItems.Add(placeholder);
@@ -155,15 +151,38 @@ namespace ImagePuzzle
         private void ExeList_Drop(object sender, DragEventArgs e)
         {
             if (DragItem == null) { CleanDragDropData(); return; }
-            Point pos = e.GetPosition(ExeList);
-            _itemService.InsertUnderCursor(ExeList, pos, DragItem, placeholder!, ExeItems);
-            DragItem = null; placeholder = null; ExeDrag = null; MethodDrag = null;
+            if (placeholder != null)
+            {
+                int idx = ExeItems.IndexOf(placeholder);
+                ExeItems.Remove(placeholder);
+                placeholder = null;
+                ExeItems.Remove(DragItem);
+                if (idx > ExeItems.Count) idx = ExeItems.Count;
+                ExeItems.Insert(idx, DragItem);
+            }
+            else
+            {
+                ExeItems.Remove(DragItem);
+                ExeItems.Add(DragItem);
+            }
+            DragItem = null; ExeDrag = null; MethodDrag = null;
         }
         private void ExeList_MouseMove(object sender, MouseEventArgs e)
         {
-            if (e.LeftButton != MouseButtonState.Pressed) return;
-            if (ExeDrag != ExeList || DragItem == null) return;
+            if (e.LeftButton != MouseButtonState.Pressed || DragItem == null || ExeDrag != ExeList || _exeDragStart == null) return;
+            Point pos = e.GetPosition(ExeList);
+            if (Math.Abs(pos.X - _exeDragStart.Value.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(pos.Y - _exeDragStart.Value.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _exeDragStart = null;
+            if (placeholder == null)
+            {
+                placeholder = _itemService.CreatePlaceholder();
+                int idx = ExeItems.IndexOf(DragItem);
+                ExeItems.Insert(idx, placeholder);
+                ExeItems.Remove(DragItem);
+            }
             DragDrop.DoDragDrop(ExeList, DragItem, DragDropEffects.Move);
+            CleanDragDropData();
         }
 
         // ===== Trash Drop =====
@@ -177,25 +196,38 @@ namespace ImagePuzzle
         // ===== File List =====
         private void FileList_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
-            file = (FileItem)FileList.SelectedItem;
-            if (file == null) return;
-            fileplace = _itemService.Createfileplace();
-            int idx = FileItems.IndexOf(file);
-            FileItems.Insert(idx, fileplace);
-            FileItems.Remove(file);
+            file = FileList.SelectedItem as FileItem;
+            if (file != null) _fileDragStart = e.GetPosition(FileList);
         }
-        private void FileList_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) => CleanDragDropData();
+        private void FileList_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            _fileDragStart = null;
+            CleanDragDropData();
+        }
         private void FileList_DragEnter(object sender, DragEventArgs e)
         {
-            if (!e.Data.GetDataPresent(typeof(FileItem))) return;
-            if (fileplace != null) return;
-            fileplace = _itemService.Createfileplace();
-            FileItems.Add(fileplace);
+            if (e.Data.GetDataPresent(DataFormats.FileDrop))
+            {
+                e.Effects = DragDropEffects.Copy;
+                e.Handled = true;
+            }
         }
         private void FileList_MouseMove(object sender, MouseEventArgs e)
         {
-            if (e.LeftButton != MouseButtonState.Pressed || file == null) return;
+            if (e.LeftButton != MouseButtonState.Pressed || file == null || _fileDragStart == null) return;
+            Point pos = e.GetPosition(FileList);
+            if (Math.Abs(pos.X - _fileDragStart.Value.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(pos.Y - _fileDragStart.Value.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _fileDragStart = null;
+            if (fileplace == null)
+            {
+                fileplace = _itemService.Createfileplace();
+                int idx = FileItems.IndexOf(file);
+                FileItems.Insert(idx, fileplace);
+                FileItems.Remove(file);
+            }
             DragDrop.DoDragDrop(FileList, file, DragDropEffects.Move);
+            CleanDragDropData();
         }
         private void FileList_DragOver(object sender, DragEventArgs e)
         {
@@ -224,21 +256,14 @@ namespace ImagePuzzle
             }
             if (e.Data.GetDataPresent(typeof(FileItem)) && file != null)
             {
-                Point curPos = e.GetPosition(FileList);
-                int underIndex = _itemService.GetFileIndex(FileList, curPos, FileItems);
-                if (underIndex == 0)
-                {
-                    HitTestResult result = VisualTreeHelper.HitTest(FileList, curPos);
-                    ListBoxItem? item = ItemService.FindAncestor<ListBoxItem>(result?.VisualHit);
-                    if (item != null && file != null) { FileItems.Remove(file); FileItems.Insert(0, file); file = null; }
-                    else if (item == null && file != null) { int li = FileItems.Count - 1; FileItems.Remove(file); FileItems.Insert(li, file); file = null; }
-                }
-                else if (underIndex > 0 && fileplace != null)
-                {
-                    _itemService.InsertUnderfile(FileList, curPos, underIndex, file, fileplace, FileItems);
-                    fileplace = null;
-                }
+                int idx = fileplace != null ? FileItems.IndexOf(fileplace) : FileItems.Count;
+                if (fileplace != null) { FileItems.Remove(fileplace); fileplace = null; }
+                FileItems.Remove(file);
+                if (idx > FileItems.Count) idx = FileItems.Count;
+                FileItems.Insert(idx, file);
+                file = null;
             }
+            CleanDragDropData();
         }
 
         // ===== Buttons =====
@@ -344,10 +369,30 @@ namespace ImagePuzzle
         // ===== Drag/Drop Cleanup =====
         public void CleanDragDropData()
         {
-            ExeDrag = null; MethodDrag = null; DragItem = null; file = null;
-            if (placeholder != null) ExeItems.Remove(placeholder);
-            if (fileplace != null) FileItems.Remove(fileplace);
-            placeholder = null; fileplace = null;
+            bool wasExeReorder = ExeDrag == ExeList;
+            _exeDragStart = null;
+            _fileDragStart = null;
+            ExeDrag = null; MethodDrag = null;
+
+            if (placeholder != null)
+            {
+                int idx = ExeItems.IndexOf(placeholder);
+                ExeItems.Remove(placeholder);
+                placeholder = null;
+                if (wasExeReorder && DragItem != null && !ExeItems.Contains(DragItem))
+                    ExeItems.Insert(Math.Clamp(idx, 0, ExeItems.Count), DragItem);
+            }
+            DragItem = null;
+
+            if (fileplace != null)
+            {
+                int idx = FileItems.IndexOf(fileplace);
+                FileItems.Remove(fileplace);
+                fileplace = null;
+                if (file != null && !FileItems.Contains(file))
+                    FileItems.Insert(Math.Clamp(idx, 0, FileItems.Count), file);
+            }
+            file = null;
         }
 
         private void Window_PreviewMouseUp(object sender, MouseButtonEventArgs e) { }
