@@ -5,7 +5,7 @@ namespace ImagePuzzle
 {
     public static class LicenseService
     {
-        private const string ProductPermalink = "zjmmda"; // TODO: update after Gumroad listing
+        private const string ProductPermalink = "rnkgu";
         private const string VerifyUrl = "https://api.gumroad.com/v2/licenses/verify";
 
         public static bool IsActivated()
